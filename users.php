@@ -66,6 +66,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // ---- Reset a password ---------------------------------------------------
+    // The admin types a new temporary password and passes it to the staff member.
+    if ($action === 'reset_password') {
+        $id       = (int) post_str('id');
+        $password = post_str('password', false);
+
+        $stmt = db()->prepare('SELECT id, full_name FROM users WHERE id = ?');
+        $stmt->execute([$id]);
+        $target = $stmt->fetch();
+
+        if (!$target) {
+            flash('error', 'User not found.');
+        } elseif (strlen($password) < 8) {
+            flash('error', 'The new password must be at least 8 characters.');
+        } else {
+            db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+                ->execute([password_hash($password, PASSWORD_DEFAULT), $target['id']]);
+
+            flash('success', 'Password reset for ' . $target['full_name'] . '. Share the new password with them privately.');
+        }
+
+        redirect('users.php');
+    }
+
     // ---- Activate / deactivate -------------------------------------------
     if ($action === 'toggle') {
         $id = (int) post_str('id');
@@ -140,7 +164,7 @@ require __DIR__ . '/includes/header.php';
                                 <span class="text-slate-500">Deactivated</span>
                             <?php endif; ?>
                         </td>
-                        <td class="px-4 py-3 text-right">
+                        <td class="px-4 py-3 text-right whitespace-nowrap">
                             <?php if ((int) $u['id'] !== (int) $me['id']): ?>
                                 <form method="post" class="inline">
                                     <?= csrf_field() ?>
@@ -153,6 +177,20 @@ require __DIR__ . '/includes/header.php';
                             <?php else: ?>
                                 <span class="text-slate-400">You</span>
                             <?php endif; ?>
+
+                            <!-- <details> is built into HTML: click the summary to open or close the form, no JavaScript needed -->
+                            <details class="block mt-1 text-left">
+                                <summary class="cursor-pointer text-indigo-700 hover:underline text-right list-none">Reset password</summary>
+                                <form method="post" class="mt-2 flex gap-2">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="reset_password">
+                                    <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                                    <input name="password" type="password" required minlength="8"
+                                           placeholder="New password (8+)" autocomplete="new-password"
+                                           class="w-40 rounded border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <button class="rounded bg-indigo-700 hover:bg-indigo-800 text-white text-sm px-3 py-1">Save</button>
+                                </form>
+                            </details>
                         </td>
                     </tr>
                 <?php endforeach; ?>
