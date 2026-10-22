@@ -20,7 +20,7 @@ define('APP_NAME', env('APP_NAME', 'Holiday Talent Program'));
 // The URL path where the app lives. No trailing slash.
 // Local example: http://localhost/talent-program  ->  '/talent-program'
 // If the app sits at the domain root on the live server, use an empty value.
-define('BASE_URL', rtrim(env('BASE_URL', '/talent-program'), '/'));
+define('BASE_URL', rtrim(env('BASE_URL', '/talent_program'), '/'));
 
 // ---- Database -------------------------------------------------------------
 define('DB_HOST',    env('DB_HOST', 'localhost'));

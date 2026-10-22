@@ -30,3 +30,19 @@ function redirect(string $path): void
     header('Location: ' . url($path));
     exit;
 }
+
+/**
+ * Read one text field from a submitted form, safely.
+ * Returns '' if the field is missing (or was sent as an array, which only an attacker would do).
+ * Leading/trailing spaces are removed unless you pass false, which is what we do for passwords.
+ */
+function post_str(string $key, bool $trim = true): string
+{
+    $value = $_POST[$key] ?? '';
+
+    if (!is_string($value)) {
+        return '';
+    }
+
+    return $trim ? trim($value) : $value;
+}
