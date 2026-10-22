@@ -1,0 +1,8 @@
+/* assets/css/style.css
+   Tailwind does most of the styling. Put anything custom here. */
+
+/* Keep number columns aligned in tables later on */
+.num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}

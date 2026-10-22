@@ -1,0 +1,6 @@
+# .htaccess  (Apache servers, which most shared hosting uses)
+# Stop visitors from downloading private files by typing their URL.
+# Blocks: .env, .gitignore, any other dotfile, and .sql files such as schema.sql
+<FilesMatch "(^\.|\.sql$)">
+    Require all denied
+</FilesMatch>
