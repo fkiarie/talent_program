@@ -1,6 +1,20 @@
-# .htaccess  (Apache servers, which most shared hosting uses)
-# Stop visitors from downloading private files by typing their URL.
-# Blocks: .env, .gitignore, any other dotfile, and .sql files such as schema.sql
-<FilesMatch "(^\.|\.sql$)">
+# .htaccess  (Apache; most shared hosting)
+# 1. Block downloads of private files: .env, .gitignore, any dotfile, .sql, .md and Composer/npm files.
+# 2. No directory listings.
+# 3. Files that exist only to be included by other PHP files are never served directly.
+Options -Indexes
+
+<FilesMatch "(^\.|\.(sql|md|log|lock|json|js\.map)$|^(tailwind\.config\.js|package\.json)$)">
     Require all denied
 </FilesMatch>
+
+# api/_json.php is a helper, not an endpoint
+<FilesMatch "^_.*\.php$">
+    Require all denied
+</FilesMatch>
+
+# Hide server details and stop MIME sniffing
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>

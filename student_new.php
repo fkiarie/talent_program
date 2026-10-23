@@ -10,12 +10,13 @@
  *   4. Add the one-time registration fee (Ksh 2,000) to the student's account.
  */
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/registration.php';
 
 $user = require_login();      // Admins and Moderators may both register students
 
 $pageTitle   = 'Register student';
 $pageScripts = ['assets/js/student_form.js'];     // loaded by footer.php
-$relations   = ['Mother', 'Father', 'Guardian', 'Grandparent', 'Aunt', 'Uncle', 'Sibling', 'Other'];
+$relations   = RELATIONS;
 
 // The form fields. $old holds what the user typed so we can refill the form after an error.
 $old = [
@@ -38,130 +39,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $old[$field] = post_str($field);
     }
 
-    // ---- 1. Validate ------------------------------------------------------
-    // Student
-    if ($old['full_name'] === '' || mb_strlen($old['full_name']) > 120) {
-        $errors[] = 'Enter the student\'s full name (up to 120 characters).';
-    }
-
-    $dob = parse_date($old['date_of_birth']);
-    if ($dob === null) {
-        $errors[] = 'Enter a valid date of birth.';
-    } elseif ($dob > new DateTimeImmutable('today')) {
-        $errors[] = 'The date of birth cannot be in the future.';
-    } elseif (age_years($dob->format('Y-m-d')) > 25) {
-        $errors[] = 'The date of birth makes the student older than 25. Please check it.';
-    }
-
-    if ($old['nationality'] === '' || mb_strlen($old['nationality']) > 60) {
-        $errors[] = 'Enter the nationality (up to 60 characters).';
-    }
-
-    $studentIdNo = normalize_id_number($old['id_passport_no']);
-    if ($studentIdNo !== '' && !valid_id_number($studentIdNo)) {
-        $errors[] = 'The student\'s ID/passport number may only contain letters, digits, - and / (4 to 30 characters). Leave it blank if there is none.';
-    }
+    // ---- 1. Validate (the same rules the public registration page uses) ----
+    $child = validate_child($old, $errors);
 
     if (!in_array($old['relation'], $relations, true)) {
         $errors[] = 'Choose the guardian\'s relation to the student.';
     }
 
-    // Guardian
-    $guardianIdNo = normalize_id_number($old['g_id_number']);
-    if (!valid_id_number($guardianIdNo)) {
-        $errors[] = 'Enter the guardian\'s ID number (letters, digits, - and / only, 4 to 30 characters).';
-    }
-
-    $phone = normalize_phone($old['g_phone']);
-    if ($phone === null) {
-        $errors[] = 'Enter a valid phone number, e.g. 0712 345 678. Numbers from other countries must start with +.';
-    }
-
-    $altPhone = null;
-    if ($old['g_alt_phone'] !== '') {
-        $altPhone = normalize_phone($old['g_alt_phone']);
-        if ($altPhone === null) {
-            $errors[] = 'The alternative phone number is not valid. Leave it blank if there is none.';
-        }
-    }
-
-    // Does this guardian already exist? (We check on the server, we never trust the browser.)
-    $guardian = null;
-    if (valid_id_number($guardianIdNo)) {
-        $stmt = db()->prepare('SELECT id, full_name FROM guardians WHERE id_number = ?');
-        $stmt->execute([$guardianIdNo]);
-        $guardian = $stmt->fetch() ?: null;
-    }
-
-    if ($guardian === null && ($old['g_full_name'] === '' || mb_strlen($old['g_full_name']) > 120)) {
-        $errors[] = 'Enter the guardian\'s full name (up to 120 characters).';
-    }
+    $guardian = validate_guardian([
+        'id_number' => $old['g_id_number'],
+        'full_name' => $old['g_full_name'],
+        'phone'     => $old['g_phone'],
+        'alt_phone' => $old['g_alt_phone'],
+    ], $errors);
 
     // Duplicate checks (only worth running once the basics are valid)
     if (!$errors) {
-        if ($studentIdNo !== '') {
-            $dup = db()->prepare('SELECT full_name FROM students WHERE id_passport_no = ?');
-            $dup->execute([$studentIdNo]);
-            if ($found = $dup->fetch()) {
-                $errors[] = 'That ID/passport number is already registered to ' . $found['full_name'] . '.';
-            }
+        if ($taken = student_id_taken($child['id_no'])) {
+            $errors[] = 'That ID/passport number is already registered to ' . $taken . '.';
         }
-
-        if ($guardian !== null) {
-            $dup = db()->prepare(
-                'SELECT 1 FROM students WHERE guardian_id = ? AND full_name = ? AND date_of_birth = ?'
-            );
-            $dup->execute([$guardian['id'], $old['full_name'], $dob->format('Y-m-d')]);
-            if ($dup->fetchColumn()) {
-                $errors[] = 'A student with this name and date of birth is already registered under this guardian.';
-            }
+        if ($guardian['existing'] !== null
+            && find_duplicate_child((int) $guardian['existing']['id'], $child['full_name'], $child['dob'])) {
+            $errors[] = 'A student with this name and date of birth is already registered under this guardian.';
         }
     }
 
-    // ---- 2-4. Save --------------------------------------------------------
+    // ---- 2. Save: guardian, student and registration fee, all or nothing ----
     if (!$errors) {
         $pdo = db();
 
         try {
-            // A transaction makes the steps below all-or-nothing: if any step
-            // fails, none of them are kept. We never end up with a student
-            // who has no registration fee, or a guardian with no student.
             $pdo->beginTransaction();
-
-            if ($guardian !== null) {
-                $guardianId = (int) $guardian['id'];
-                // Existing guardian: keep their saved name, but let staff correct the phone numbers.
-                $pdo->prepare('UPDATE guardians SET phone = ?, alt_phone = ? WHERE id = ?')
-                    ->execute([$phone, $altPhone, $guardianId]);
-            } else {
-                $pdo->prepare(
-                    'INSERT INTO guardians (full_name, id_number, phone, alt_phone) VALUES (?, ?, ?, ?)'
-                )->execute([$old['g_full_name'], $guardianIdNo, $phone, $altPhone]);
-                $guardianId = (int) $pdo->lastInsertId();
-            }
-
-            $pdo->prepare(
-                'INSERT INTO students
-                    (full_name, date_of_birth, nationality, id_passport_no, guardian_id, relation, registered_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)'
-            )->execute([
-                $old['full_name'],
-                $dob->format('Y-m-d'),
-                $old['nationality'],
-                $studentIdNo !== '' ? $studentIdNo : null,     // NULL, not an empty string, when blank
-                $guardianId,
-                $old['relation'],
-                $user['id'],
-            ]);
-            $studentId = (int) $pdo->lastInsertId();
-
-            // The one-time registration fee. The amount is saved on the charge itself,
-            // so changing REGISTRATION_FEE later never alters existing students.
-            $pdo->prepare(
-                "INSERT INTO charges (student_id, enrollment_id, billing_period_id, charge_type, amount)
-                 VALUES (?, NULL, NULL, 'REGISTRATION', ?)"
-            )->execute([$studentId, REGISTRATION_FEE]);
-
+            $guardianId = save_guardian($pdo, $guardian, true);     // staff may correct phone numbers
+            $studentId  = save_child($pdo, $guardianId, $child, $old['relation'], (int) $user['id']);
             $pdo->commit();
         } catch (PDOException $ex) {
             if ($pdo->inTransaction()) {
@@ -177,9 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
-            $message = $old['full_name'] . ' registered. A registration fee of ' . money(REGISTRATION_FEE) . ' was added.';
-            if ($guardian !== null) {
-                $message .= ' Linked to existing guardian ' . $guardian['full_name'] . '.';
+            $message = $child['full_name'] . ' registered. A registration fee of ' . money(REGISTRATION_FEE) . ' was added.';
+            if ($guardian['existing'] !== null) {
+                $message .= ' Linked to existing guardian ' . $guardian['existing']['full_name'] . '.';
             }
             flash('success', $message);
             redirect('student.php?id=' . $studentId);

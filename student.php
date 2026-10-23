@@ -88,16 +88,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($activeRow !== null) {
                 flash('error', 'This student is already enrolled in ' . $level['name'] . ' at another level. Drop that enrolment first to change level.');
             } else {
-                if ($sameLevelRow !== null) {
-                    // They were enrolled here before and dropped: switch it back on with today's fee.
-                    db()->prepare(
-                        "UPDATE enrollments SET status = 'ACTIVE', monthly_fee = ?, enrolled_on = CURRENT_DATE WHERE id = ?"
-                    )->execute([$level['monthly_fee'], $sameLevelRow['id']]);
-                } else {
-                    // monthly_fee is a COPY of the level's fee at this moment (the "snapshot").
-                    db()->prepare(
-                        'INSERT INTO enrollments (student_id, activity_level_id, monthly_fee) VALUES (?, ?, ?)'
-                    )->execute([$student['id'], $level['id'], $level['monthly_fee']]);
+                $pdo = db();
+                try {
+                    // Enrolment and the first month's charge are saved together or not at all.
+                    $pdo->beginTransaction();
+
+                    if ($sameLevelRow !== null) {
+                        // They were enrolled here before and dropped: switch it back on with today's fee.
+                        $pdo->prepare(
+                            "UPDATE enrollments SET status = 'ACTIVE', monthly_fee = ?, enrolled_on = CURRENT_DATE WHERE id = ?"
+                        )->execute([$level['monthly_fee'], $sameLevelRow['id']]);
+                        $enrollmentId = (int) $sameLevelRow['id'];
+                    } else {
+                        // monthly_fee is a COPY of the level's fee at this moment (the "snapshot").
+                        $pdo->prepare(
+                            'INSERT INTO enrollments (student_id, activity_level_id, monthly_fee) VALUES (?, ?, ?)'
+                        )->execute([$student['id'], $level['id'], $level['monthly_fee']]);
+                        $enrollmentId = (int) $pdo->lastInsertId();
+                    }
+
+                    // Bill the joining month now, so it shows up in what the family owes.
+                    create_first_month_charge($pdo, (int) $student['id'], $enrollmentId, $level['monthly_fee']);
+                    $pdo->commit();
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    throw $ex;
                 }
                 flash('success', 'Enrolled in ' . $level['name'] . ' (' . $level['proficiency'] . ') at ' . money($level['monthly_fee']) . ' per month.');
             }
@@ -175,9 +192,22 @@ foreach ($charges as $c) {
     $totalCharged += (float) $c['amount'];
 }
 
-$pay = db()->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE student_id = ? AND status = 'VALID'");
-$pay->execute([$student['id']]);
-$totalPaid = (float) $pay->fetchColumn();
+// "Paid" means money that has been applied to THIS student's charges. A payment covering
+// several brothers and sisters is split between them, so we count allocations, not payments.
+$totalPaid = student_paid_total((int) $student['id']);
+
+// Payments that touched this student's charges (for the receipts list)
+$pl = db()->prepare(
+    "SELECT p.id, p.mpesa_code, p.paid_on, p.status, SUM(a.amount) AS applied
+       FROM payments p
+       JOIN payment_allocations a ON a.payment_id = p.id
+       JOIN charges c ON c.id = a.charge_id
+      WHERE c.student_id = ?
+      GROUP BY p.id, p.mpesa_code, p.paid_on, p.status
+      ORDER BY p.paid_on DESC, p.id DESC"
+);
+$pl->execute([$student['id']]);
+$payments = $pl->fetchAll();
 
 $balance = $totalCharged - $totalPaid;
 
@@ -357,6 +387,36 @@ require __DIR__ . '/includes/header.php';
                 </tbody>
             </table>
         </section>
+
+        <section class="bg-white rounded-lg shadow overflow-x-auto">
+            <h2 class="text-lg font-semibold p-6 pb-3">Payments</h2>
+            <?php if ($payments): ?>
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-left text-slate-600">
+                        <tr>
+                            <th class="px-6 py-3">M-Pesa code</th>
+                            <th class="px-6 py-3">Date</th>
+                            <th class="px-6 py-3 text-right">Applied to this student</th>
+                            <th class="px-6 py-3"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <?php foreach ($payments as $pm): ?>
+                            <tr class="<?= $pm['status'] === 'VALID' ? '' : 'text-slate-400 line-through' ?>">
+                                <td class="px-6 py-3 font-mono"><?= e($pm['mpesa_code']) ?></td>
+                                <td class="px-6 py-3 whitespace-nowrap"><?= e(date('d M Y H:i', strtotime($pm['paid_on']))) ?></td>
+                                <td class="px-6 py-3 text-right num"><?= e(money($pm['applied'])) ?></td>
+                                <td class="px-6 py-3 text-right">
+                                    <a class="text-indigo-700 hover:underline" href="<?= e(url('receipt.php?code=' . urlencode($pm['mpesa_code']))) ?>">Receipt</a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <p class="px-6 pb-6 text-sm text-slate-500">No payments yet.</p>
+            <?php endif; ?>
+        </section>
     </div>
 
     <!-- Account summary -->
@@ -381,7 +441,6 @@ require __DIR__ . '/includes/header.php';
                     </dd>
                 </div>
             </dl>
-            <p class="text-xs text-slate-500 mt-4">Monthly activity charges are created in Phase 5, and payments in Phase 6.</p>
         </section>
     </aside>
 

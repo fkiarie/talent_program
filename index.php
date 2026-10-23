@@ -49,9 +49,9 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <h3 class="font-bold text-mistnavy text-lg">Instant M-Pesa Checkout</h3>
             <p class="text-xs text-slate-600 leading-relaxed">
-                Automated payment processing with instant STK push simulation and electronic receipt generation.
+                Pay by M-Pesa STK push and get an electronic receipt straight away.
             </p>
-            <span class="text-slate-400 text-xs block">Active Gateway</span>
+            <span class="text-slate-400 text-xs block">Secure M-Pesa checkout</span>
         </div>
 
         <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-3">

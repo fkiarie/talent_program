@@ -41,7 +41,8 @@ define('DEFAULT_LEVEL_FEES', [
 ]);
 
 // Must the registration fee be fully paid before a student can join an activity?
-// Payments are only built in Phase 6, so this stays false until then (Phase 6 turns it on).
+// Turn this on (REQUIRE_REGISTRATION_PAID=true in .env) if staff must not enrol a student in an activity
+// until the registration fee is paid. The public registration page is not affected: it bills and collects both together.
 define('REQUIRE_REGISTRATION_PAID', envBool('REQUIRE_REGISTRATION_PAID', false));
 
 // ---- Environment ----------------------------------------------------------

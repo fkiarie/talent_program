@@ -1,2 +1,5 @@
 .env
 setup_admin.php
+node_modules/
+*.log
+sql

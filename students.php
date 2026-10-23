@@ -56,13 +56,16 @@ $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
 
 // ---- Fetch this page of results ---------------------------------------------
-// balance = everything charged to the student minus every valid payment they made.
+// balance = everything charged to the student minus every valid payment applied to those charges.
 // Positive = they owe money, negative = they have credit.
 $sql = "SELECT s.id, s.full_name, s.date_of_birth, s.registered_on,
                g.full_name AS guardian_name, g.phone AS guardian_phone,
                COALESCE((SELECT SUM(c.amount) FROM charges c WHERE c.student_id = s.id), 0)
-             - COALESCE((SELECT SUM(p.amount) FROM payments p
-                          WHERE p.student_id = s.id AND p.status = 'VALID'), 0) AS balance
+             - COALESCE((SELECT SUM(a.amount)
+                           FROM payment_allocations a
+                           JOIN payments p ON p.id = a.payment_id
+                           JOIN charges c2 ON c2.id = a.charge_id
+                          WHERE c2.student_id = s.id AND p.status = 'VALID'), 0) AS balance
           FROM students s
           JOIN guardians g ON g.id = s.guardian_id
           $where

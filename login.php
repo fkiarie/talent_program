@@ -1,91 +1,100 @@
 <?php
 /**
  * login.php
- * Shows the login form and checks the email + password.
+ * Staff sign-in, built on includes/auth.php like every other page.
+ *   - CSRF token on the form
+ *   - rate limiting per email and per IP (the table survives cookie-clearing)
+ *   - same message for "no such user" and "wrong password"
+ *   - new session ID after login, password re-hashed if the algorithm has improved
  */
 require_once __DIR__ . '/includes/auth.php';
 
-// Already logged in? Nothing to do here.
 if (current_user() !== null) {
-    redirect('index.php');
+    redirect('students.php');
 }
 
-// Brand-new system with no users yet? Go create the first admin.
-$userCount = (int) db()->query('SELECT COUNT(*) FROM users')->fetchColumn();
-if ($userCount === 0) {
-    redirect('setup_admin.php');
-}
-
-$pageTitle = 'Log in';
+$pageTitle = 'Staff login';
 $error     = '';
 $email     = '';
+
+const LOGIN_MAX_PER_EMAIL = 5;     // wrong attempts allowed per email ...
+const LOGIN_MAX_PER_IP    = 20;    // ... and per IP address ...
+const LOGIN_WINDOW        = 900;   // ... in this many seconds (15 minutes)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
-    $email    = post_str('email');
-    $password = post_str('password', false);   // false = do not trim: spaces may be part of a password
+    $email    = strtolower(post_str('email'));
+    $password = post_str('password', false);
+    $ip       = client_ip();
 
-    // Prepared statement: the ? is filled in separately from the SQL text,
-    // so whatever the visitor types can never be run as SQL.
-    $stmt = db()->prepare('SELECT id, password_hash, is_active FROM users WHERE email = ?');
-    $stmt->execute([strtolower($email)]);
-    $user = $stmt->fetch();
+    if (rate_limited('login_ip', $ip, LOGIN_MAX_PER_IP, LOGIN_WINDOW)
+        || rate_limited('login_email', $email, LOGIN_MAX_PER_EMAIL, LOGIN_WINDOW)) {
+        http_response_code(429);
+        $error = 'Too many failed attempts. Please wait 15 minutes and try again.';
+    } else {
+        $stmt = db()->prepare('SELECT id, password_hash FROM users WHERE email = ? AND is_active = 1');
+        $stmt->execute([$email]);
+        $row = $stmt->fetch();
 
-    // Always do one password check, even for unknown emails, so the response
-    // time does not reveal which emails exist.
-    $hash = $user ? $user['password_hash'] : password_hash('not-a-real-password', PASSWORD_DEFAULT);
-    $ok   = password_verify($password, $hash) && $user && (int) $user['is_active'] === 1;
+        // Always run password_verify, even for unknown emails, so timing does not reveal which emails exist.
+        $hash  = $row['password_hash'] ?? '$2y$10$usesomesillystringforsaltexample.ZfZm8N0TqU0JvC0q1yP5Q0vK2';
+        $valid = password_verify($password, $hash) && $row !== false;
 
-    if ($ok) {
-        // If PHP's recommended hashing strength has improved since this password
-        // was stored, quietly upgrade the stored hash.
-        if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
-            db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-                ->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
+        if ($valid) {
+            if (password_needs_rehash($row['password_hash'], PASSWORD_DEFAULT)) {
+                db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+                    ->execute([password_hash($password, PASSWORD_DEFAULT), $row['id']]);
+            }
+            rate_limit_clear('login_email', $email);
+            login_user((int) $row['id']);
+            redirect('students.php');
         }
 
-        login_user((int) $user['id']);
-        redirect('index.php');
+        rate_limit_hit('login_ip', $ip);
+        rate_limit_hit('login_email', $email);
+        $error = 'Invalid email or password.';
     }
-
-    // One vague message for every failure: don't reveal whether the email exists.
-    $error = 'Incorrect email or password, or the account is deactivated.';
 }
 
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="max-w-sm mx-auto bg-white rounded-lg shadow p-6">
-    <h1 class="text-xl font-bold mb-4">Log in</h1>
+<div class="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200">
+    <div class="bg-mistnavy p-8 text-white text-center border-b-4 border-mistgold">
+        <div class="w-16 h-16 bg-mistgold text-mistnavy rounded-2xl flex items-center justify-center mx-auto mb-3 font-black text-2xl shadow">M</div>
+        <h1 class="text-xl font-bold">MIST Staff Portal</h1>
+        <p class="text-xs text-slate-300 mt-1">Musketeers Institute of Science and Technology</p>
+    </div>
 
-    <?php if ($error): ?>
-        <div class="mb-4 rounded bg-red-50 border border-red-200 text-red-800 px-3 py-2 text-sm">
-            <?= e($error) ?>
-        </div>
-    <?php endif; ?>
+    <div class="p-8 space-y-6">
+        <?php if ($error): ?>
+            <div class="bg-rose-50 text-rose-700 p-3 rounded-xl text-xs border border-rose-200" role="alert">
+                <i class="fas fa-circle-exclamation text-rose-500"></i> <?= e($error) ?>
+            </div>
+        <?php endif; ?>
 
-    <form method="post" class="space-y-4" autocomplete="on">
-        <?= csrf_field() ?>
+        <form method="post" class="space-y-4">
+            <?= csrf_field() ?>
+            <div>
+                <label for="email" class="block text-xs font-bold uppercase text-slate-600 mb-1">Staff email</label>
+                <input id="email" type="email" name="email" required autocomplete="username" value="<?= e($email) ?>"
+                       class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-mistnavy text-sm">
+            </div>
+            <div>
+                <label for="password" class="block text-xs font-bold uppercase text-slate-600 mb-1">Password</label>
+                <input id="password" type="password" name="password" required autocomplete="current-password"
+                       class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-mistnavy text-sm">
+            </div>
+            <button class="w-full bg-mistgreen hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg text-sm">
+                <i class="fas fa-right-to-bracket"></i> Sign in
+            </button>
+        </form>
 
-        <div>
-            <label for="email" class="block text-sm font-medium mb-1">Email</label>
-            <input id="email" name="email" type="email" required autofocus
-                   value="<?= e($email) ?>"
-                   class="w-full rounded border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-
-        <div>
-            <label for="password" class="block text-sm font-medium mb-1">Password</label>
-            <input id="password" name="password" type="password" required
-                   class="w-full rounded border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-
-        <button type="submit"
-                class="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-medium rounded px-4 py-2">
-            Log in
-        </button>
-    </form>
+        <p class="text-center text-xs text-slate-500">
+            <a href="<?= e(url('register.php')) ?>" class="hover:text-mistnavy font-medium">&larr; Back to parent registration</a>
+        </p>
+    </div>
 </div>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

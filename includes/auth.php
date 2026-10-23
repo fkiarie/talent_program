@@ -15,6 +15,9 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/security.php';
+
+send_security_headers();
 
 // ---------------------------------------------------------------------------
 // 1. Start the session safely
@@ -36,6 +39,14 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
 
     session_start();
+
+    // Idle timeout: someone who walks away from a shared computer is logged out after 2 hours.
+    $idleLimit = 2 * 60 * 60;
+    if (!empty($_SESSION['user_id']) && isset($_SESSION['last_seen']) && time() - (int) $_SESSION['last_seen'] > $idleLimit) {
+        unset($_SESSION['user_id']);
+        $_SESSION['flash'][] = ['type' => 'error', 'message' => 'You were logged out because of inactivity. Please sign in again.'];
+    }
+    $_SESSION['last_seen'] = time();
 }
 
 // ---------------------------------------------------------------------------

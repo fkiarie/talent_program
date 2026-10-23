@@ -37,3 +37,7 @@ function db(): PDO
 
     return $pdo;
 }
+function get_db(): PDO
+{
+    return db();
+}
