@@ -20,7 +20,7 @@ define('APP_NAME', env('APP_NAME', 'Holiday Talent Program'));
 // The URL path where the app lives. No trailing slash.
 // Local example: http://localhost/talent-program  ->  '/talent-program'
 // If the app sits at the domain root on the live server, use an empty value.
-define('BASE_URL', rtrim(env('BASE_URL', '/talent_program'), '/'));
+define('BASE_URL', rtrim(env('BASE_URL', '/talent-program'), '/'));
 
 // ---- Database -------------------------------------------------------------
 define('DB_HOST',    env('DB_HOST', 'localhost'));
@@ -31,6 +31,18 @@ define('DB_CHARSET', 'utf8mb4');
 
 // ---- Business rules -------------------------------------------------------
 define('REGISTRATION_FEE', (float) env('REGISTRATION_FEE', 2000));   // one-time fee in Ksh
+
+// Every activity has these three levels. These are only the STARTING prices shown
+// when an admin adds an activity; each activity's real prices are stored in the database.
+define('DEFAULT_LEVEL_FEES', [
+    'Beginner'     => 4500.00,
+    'Intermediate' => 3500.00,
+    'Advanced'     => 3000.00,
+]);
+
+// Must the registration fee be fully paid before a student can join an activity?
+// Payments are only built in Phase 6, so this stays false until then (Phase 6 turns it on).
+define('REQUIRE_REGISTRATION_PAID', envBool('REQUIRE_REGISTRATION_PAID', false));
 
 // ---- Environment ----------------------------------------------------------
 date_default_timezone_set(env('APP_TIMEZONE', 'Africa/Nairobi'));

@@ -31,6 +31,17 @@ require __DIR__ . '/includes/header.php';
     You are logged in as <strong><?= e(ucfirst(strtolower($user['role']))) ?></strong>.
 </p>
 
+<div class="grid gap-4 sm:grid-cols-2 max-w-xl mb-6">
+    <a href="<?= url('student_new.php') ?>" class="block bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg shadow p-5">
+        <span class="font-semibold">Register a student</span><br>
+        <span class="text-sm text-indigo-200">New student and guardian details</span>
+    </a>
+    <a href="<?= url('students.php') ?>" class="block bg-white hover:bg-slate-50 rounded-lg shadow p-5">
+        <span class="font-semibold">Students</span><br>
+        <span class="text-sm text-slate-500">Search and view registered students</span>
+    </a>
+</div>
+
 <?php if ($user['role'] === 'ADMIN'): ?>
     <div class="bg-white rounded-lg shadow p-6 max-w-xl">
         <h2 class="text-lg font-semibold mb-3">System check <span class="text-xs font-normal text-slate-500">(admin only)</span></h2>
@@ -50,10 +61,6 @@ require __DIR__ . '/includes/header.php';
             <p class="text-red-700 font-medium">Missing tables: <?= e(implode(', ', $missing)) ?></p>
             <p class="text-sm text-slate-600 mt-1">Import <code>schema.sql</code> into the <?= e(DB_NAME) ?> database.</p>
         <?php endif; ?>
-    </div>
-<?php else: ?>
-    <div class="bg-white rounded-lg shadow p-6 max-w-xl text-slate-600">
-        Student registration and payment screens will appear here in the next phases.
     </div>
 <?php endif; ?>
 

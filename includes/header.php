@@ -34,7 +34,9 @@ $flashes   = flash_all();        // one-time notices such as "User added."
                 <?php if ($navUser): ?>
                     <a href="<?= url('index.php') ?>" class="text-sm hover:underline">Home</a>
 
-                    <!-- Menu links get added here in later phases (Students, Activities, Payments...) -->
+                    <a href="<?= url('students.php') ?>" class="text-sm hover:underline">Students</a>
+
+                    <!-- Menu links get added here in later phases (Activities, Payments...) -->
 
                     <?php if ($navUser['role'] === 'ADMIN'): ?>
                         <a href="<?= url('users.php') ?>" class="text-sm hover:underline">Users</a>
