@@ -6,6 +6,7 @@
  * student ID/passport number, and phone numbers.
  */
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/billing.php';
 
 $user = require_login();
 
@@ -58,7 +59,7 @@ $offset     = ($page - 1) * $perPage;
 // ---- Fetch this page of results ---------------------------------------------
 // balance = everything charged to the student minus every valid payment applied to those charges.
 // Positive = they owe money, negative = they have credit.
-$sql = "SELECT s.id, s.full_name, s.date_of_birth, s.registered_on,
+$sql = "SELECT s.id, s.full_name, s.date_of_birth, s.registered_on, s.registration_status,
                g.full_name AS guardian_name, g.phone AS guardian_phone,
                COALESCE((SELECT SUM(c.amount) FROM charges c WHERE c.student_id = s.id), 0)
              - COALESCE((SELECT SUM(a.amount)
@@ -138,6 +139,9 @@ require __DIR__ . '/includes/header.php';
                         <a class="text-indigo-700 hover:underline" href="<?= url('student.php?id=' . (int) $s['id']) ?>">
                             <?= e($s['full_name']) ?>
                         </a>
+                        <?php if ($s['registration_status'] === 'RESERVED'): ?>
+                            <span class="ml-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">Pay later</span>
+                        <?php endif; ?>
                     </td>
                     <td class="px-4 py-3"><?= (int) age_years($s['date_of_birth']) ?></td>
                     <td class="px-4 py-3"><?= e($s['guardian_name']) ?></td>

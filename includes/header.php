@@ -8,10 +8,12 @@
  *     $pageScripts = ['assets/js/x.js'];  // loaded by footer.php
  */
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/billing.php';
 
 $navUser  = current_user();
 $isStaff  = $navUser !== null;
 $isAdmin  = $isStaff && $navUser['role'] === 'ADMIN';
+$newFollowUps = $isStaff ? reservation_new_count() : 0;     // families who chose "Pay later"
 $tabTitle = (isset($pageTitle) && $pageTitle !== '' ? $pageTitle . ' | ' : '') . 'MIST Talent Program';
 ?>
 <!DOCTYPE html>
@@ -51,6 +53,9 @@ $tabTitle = (isset($pageTitle) && $pageTitle !== '' ? $pageTitle . ' | ' : '') .
                 <a href="<?= e(url('register.php')) ?>" class="text-mistgreen font-bold hover:underline"><i class="fas fa-user-plus"></i> Register Child</a>
                 <?php if ($isStaff): ?>
                     <a href="<?= e(url('students.php')) ?>" class="text-slate-700 hover:text-mistnavy">Students</a>
+                    <a href="<?= e(url('reservations.php')) ?>" class="text-slate-700 hover:text-mistnavy">
+                        Follow-ups<?php if ($newFollowUps > 0): ?> <span class="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 num"><?= (int) $newFollowUps ?></span><?php endif; ?>
+                    </a>
                     <?php if ($isAdmin): ?>
                         <a href="<?= e(url('activities.php')) ?>" class="text-slate-700 hover:text-mistnavy">Activities</a>
                         <a href="<?= e(url('periods.php')) ?>" class="text-slate-700 hover:text-mistnavy">Billing periods</a>
@@ -85,6 +90,7 @@ $tabTitle = (isset($pageTitle) && $pageTitle !== '' ? $pageTitle . ' | ' : '') .
             <a href="<?= e(url('register.php')) ?>" class="text-mistgreen font-bold">Register Child</a>
             <?php if ($isStaff): ?>
                 <a href="<?= e(url('students.php')) ?>">Students</a>
+                <a href="<?= e(url('reservations.php')) ?>">Follow-ups<?php if ($newFollowUps > 0): ?> <span class="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5"><?= (int) $newFollowUps ?></span><?php endif; ?></a>
                 <?php if ($isAdmin): ?>
                     <a href="<?= e(url('activities.php')) ?>">Activities</a>
                     <a href="<?= e(url('periods.php')) ?>">Billing</a>

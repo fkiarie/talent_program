@@ -58,3 +58,31 @@ if (APP_DEBUG) {
 } else {
     ini_set('display_errors', '0');
 }
+
+// ---- mbstring fallback ------------------------------------------------------
+// Some hosts run PHP without the mbstring extension, which makes login, rate limiting and the
+// forms crash with a blank HTTP 500. If it is missing, these simple stand-ins keep the app working.
+// (Enabling the real mbstring extension is still better; then this block does nothing.)
+if (!function_exists('mb_strlen')) {
+    function mb_strlen($s, $encoding = null)
+    {
+        $n = @preg_match_all('/./su', (string) $s);
+        return $n === false ? strlen((string) $s) : $n;
+    }
+}
+if (!function_exists('mb_substr')) {
+    function mb_substr($s, $start, $length = null, $encoding = null)
+    {
+        $s = (string) $s;
+        if (@preg_match_all('/./su', $s, $m) === false || $s === '') {
+            return $length === null ? (string) substr($s, $start) : (string) substr($s, $start, $length);
+        }
+        return implode('', $length === null ? array_slice($m[0], $start) : array_slice($m[0], $start, $length));
+    }
+}
+if (!function_exists('mb_strtolower')) {
+    function mb_strtolower($s, $encoding = null)
+    {
+        return strtolower((string) $s);
+    }
+}

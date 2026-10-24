@@ -5,6 +5,7 @@ PHP 8 + MySQL 8 system for registering children for talent activities, billing t
 ## Install (new server)
 1. Create the database and import `talent_program.sql`, then run every file in `sql/migrations/` in order
    (`001_mpesa_and_security.sql` is required; `002_backfill_first_month.sql` is optional, see the file).
+   `003_pay_later_reservations.sql` adds the "Pay later" follow-up list; run it before uploading the pay-later pages.
 2. Copy `.env.example` to `.env` and fill it in. `BASE_URL` must match the URL path exactly (`/talent_program` if the folder is called that).
 3. Open `/setup_admin.php` once if there are no users yet. Delete the file afterwards.
 4. Requirements: PHP 8.1+ with `pdo_mysql`, `curl`, `mbstring`. Apache with `.htaccess` enabled (it protects `.env`, `includes/`, `config/`, `sql/`).

@@ -79,6 +79,17 @@ require __DIR__ . '/includes/header.php';
             </form>
 
             <div id="status-box" class="hidden rounded-xl p-4 text-sm" role="status" aria-live="polite"></div>
+
+            <?php if (reservations_ready()): ?>
+                <!-- Not ready to pay: keep the registration and let the office follow up. -->
+                <form method="post" action="<?= e(url('pay_later.php')) ?>" class="border-t border-slate-200 pt-5 text-center">
+                    <?= csrf_field() ?>
+                    <p class="text-xs text-slate-500 mb-3">Not ready to pay? We will keep your registration and our team will contact you.</p>
+                    <button type="submit" class="text-mistnavy font-bold text-sm border border-mistnavy/30 hover:bg-slate-50 rounded-xl px-5 py-2.5">
+                        <i class="fas fa-clock"></i> I will pay later
+                    </button>
+                </form>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>

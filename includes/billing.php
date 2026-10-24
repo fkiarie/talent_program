@@ -245,6 +245,13 @@ function allocate_payment(PDO $pdo, int $paymentId, $amount, array $studentIds):
         $allocated += $part;
     }
 
+    // Anyone who is now fully paid becomes ACTIVE and leaves the "pay later" follow-up list.
+    try {
+        sync_reservations($pdo, $studentIds);
+    } catch (Throwable $ex) {
+        error_log('Could not update registration status: ' . $ex->getMessage());   // never block a payment
+    }
+
     return ['allocated' => $allocated / 100, 'unallocated' => $remaining / 100];
 }
 
@@ -261,4 +268,102 @@ function student_paid_total(int $studentId, ?PDO $pdo = null): float
     );
     $stmt->execute([$studentId]);
     return (float) $stmt->fetchColumn();
+}
+
+
+// ---- "Pay later" reservations --------------------------------------------------------------------
+
+/** Has migration 003 been run? Lets the site keep working if the new table is not there yet. */
+function reservations_ready(): bool
+{
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = (bool) db()->query("SHOW TABLES LIKE 'payment_reservations'")->fetchColumn();
+        } catch (Throwable $ex) {
+            $ready = false;
+        }
+    }
+    return $ready;
+}
+
+/**
+ * The parent chose "Pay later": mark each of their children who still owes money as RESERVED so a
+ * moderator can follow up. Safe to repeat; a child already CONTACTED stays CONTACTED.
+ * Call inside a transaction. Returns how many children are on the follow-up list.
+ *
+ * @param int[] $studentIds
+ */
+function reserve_students(PDO $pdo, int $guardianId, array $studentIds): int
+{
+    $studentIds = array_values(array_unique(array_map('intval', $studentIds)));
+    if (!$studentIds) {
+        return 0;
+    }
+
+    // Only this guardian's own children, and only those who still owe something.
+    $in   = implode(',', array_fill(0, count($studentIds), '?'));
+    $mine = $pdo->prepare("SELECT id FROM students WHERE guardian_id = ? AND id IN ($in)");
+    $mine->execute(array_merge([$guardianId], $studentIds));
+    $own  = array_map('intval', $mine->fetchAll(PDO::FETCH_COLUMN));
+
+    $owing = array_unique(array_map('intval', array_column(outstanding_charges($own, $pdo), 'student_id')));
+
+    // In ON DUPLICATE KEY UPDATE the columns are changed left to right, so `status` goes last.
+    $insert = $pdo->prepare(
+        "INSERT INTO payment_reservations (student_id, guardian_id) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE
+            reserved_at = IF(status = 'PAID', NOW(), reserved_at),
+            paid_at     = IF(status = 'PAID', NULL, paid_at),
+            status      = IF(status = 'PAID', 'RESERVED', status)"
+    );
+    $mark = $pdo->prepare("UPDATE students SET registration_status = 'RESERVED' WHERE id = ? AND registration_status = 'PAYMENT_PENDING'");
+    foreach ($owing as $sid) {
+        $insert->execute([$sid, $guardianId]);
+        $mark->execute([$sid]);
+    }
+    return count($owing);
+}
+
+/**
+ * Students who no longer owe anything become ACTIVE (students.registration_status), and their
+ * pay-later follow-up (if any) is marked PAID. Call inside the payment's transaction.
+ *
+ * @param int[] $studentIds
+ */
+function sync_reservations(PDO $pdo, array $studentIds): void
+{
+    $studentIds = array_values(array_unique(array_map('intval', $studentIds)));
+    if (!$studentIds) {
+        return;
+    }
+    $owing = array_map('intval', array_column(outstanding_charges($studentIds, $pdo), 'student_id'));
+
+    $activate = $pdo->prepare("UPDATE students SET registration_status = 'ACTIVE' WHERE id = ? AND registration_status <> 'ACTIVE'");
+    $done     = reservations_ready()
+        ? $pdo->prepare("UPDATE payment_reservations SET status = 'PAID', paid_at = NOW() WHERE student_id = ? AND status <> 'PAID'")
+        : null;
+
+    foreach ($studentIds as $sid) {
+        if (in_array($sid, $owing, true)) {
+            continue;
+        }
+        $activate->execute([$sid]);
+        if ($done !== null) {
+            $done->execute([$sid]);
+        }
+    }
+}
+
+/** How many families chose "Pay later" and have not been contacted yet (shown in the staff menu). */
+function reservation_new_count(): int
+{
+    if (!reservations_ready()) {
+        return 0;
+    }
+    try {
+        return (int) db()->query("SELECT COUNT(*) FROM payment_reservations WHERE status = 'RESERVED'")->fetchColumn();
+    } catch (Throwable $ex) {
+        return 0;
+    }
 }
