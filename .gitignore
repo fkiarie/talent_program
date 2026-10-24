@@ -5,3 +5,4 @@ node_modules/
 sql
 check.php
 .htaccess
+gen.php

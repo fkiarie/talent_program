@@ -28,7 +28,31 @@ if (session_status() === PHP_SESSION_NONE) {
     $isHttps = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
 
     session_name('talent_sid');
+
+    // Where session files are stored. Some hosts point PHP at a folder that does not exist,
+    // which silently breaks login and every form's security token. Set SESSION_SAVE_PATH in .env
+    // to use your own folder (outside the web root, permission 700). If it is not set, and PHP's
+    // default folder is unusable, fall back to a private folder inside the system temp directory.
+    $sessionPath = (string) env('SESSION_SAVE_PATH', '');
+    if ($sessionPath === '') {
+        $current = (string) session_save_path();
+        if ($current === '' || !is_dir($current) || !is_writable($current)) {
+            $sessionPath = sys_get_temp_dir() . '/talent_sessions';
+        }
+    }
+    if ($sessionPath !== '') {
+        if (!is_dir($sessionPath)) {
+            @mkdir($sessionPath, 0700, true);
+        }
+        if (is_dir($sessionPath) && is_writable($sessionPath)) {
+            session_save_path($sessionPath);
+        }
+    }
     ini_set('session.use_strict_mode', '1');       // refuse session IDs the server did not create
+    // Keep session files for 8 hours. PHP's default is only 24 minutes, after which a form left open
+    // (a parent filling in the registration, or a payment page) loses its security token.
+    // The 2-hour idle logout for staff below is still enforced by the app itself.
+    ini_set('session.gc_maxlifetime', '28800');
 
     session_set_cookie_params([
         'lifetime' => 0,                            // cookie dies when the browser closes
@@ -168,14 +192,40 @@ function csrf_field(): string
     return '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">';
 }
 
-/** Call at the top of any code that handles a POST. Stops the page if the token is wrong. */
+/**
+ * Call at the top of any code that handles a POST. Stops the page if the token is wrong.
+ * The real reason is written to the PHP error_log (and shown on screen when APP_DEBUG=true),
+ * because "session expired" can mean several different things.
+ */
 function csrf_check(): void
 {
-    $sent = $_POST['csrf'] ?? '';
+    $sent     = $_POST['csrf'] ?? '';
+    $hadToken = !empty($_SESSION['csrf']);          // checked BEFORE csrf_token() creates a new one
 
     if (!is_string($sent) || !hash_equals(csrf_token(), $sent)) {
+        if (!$hadToken) {
+            $reason = 'the server had no saved session for this visit (session file missing, expired or not writable)';
+        } elseif ($sent === '') {
+            $reason = 'the form did not send a security token';
+        } else {
+            $reason = 'the form came from an older visit (its token does not match this session)';
+        }
+        error_log(sprintf(
+            'CSRF check failed on %s: %s | browser sent session cookie: %s | session folder: %s',
+            $_SERVER['SCRIPT_NAME'] ?? '?',
+            $reason,
+            isset($_COOKIE[session_name()]) ? 'yes' : 'no',
+            session_save_path()
+        ));
+
         http_response_code(419);
-        die('Your session expired or the form was invalid. Go back, refresh the page and try again.');
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<p>Your session expired or the form was invalid. Go back, refresh the page and try again.</p>';
+        echo '<p><a href="' . e(url('index.php')) . '">Back to the home page</a></p>';
+        if (APP_DEBUG) {
+            echo '<p><small>Debug: ' . e($reason) . '</small></p>';
+        }
+        exit;
     }
 }
 
